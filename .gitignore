@@ -1,0 +1,10 @@
+engine
+*.o
+*.db
+*.db-wal
+*.db-shm
+*.bak.*
+bench_results.txt
+.env
+*.tmp
+/tmp/*
