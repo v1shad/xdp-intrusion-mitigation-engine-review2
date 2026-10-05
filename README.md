@@ -20,19 +20,37 @@ Traditional firewalls (like iptables or Netfilter) process packets *after* the O
 
 ## Architecture
 
-```text
-[SSH Log File] ---> (Log Tail/Parse)
-                           |
-                           v
-                    [Rule Engine (C++)] <---> [rules.yaml]
-                           |
-                           | (Detects threshold exceeded)
-                           v
-                     (Map Update) ---> [XDP Blocklist Map]
-                                              |
-[SQLite Database] <--- (Alerts/Audit)         | (Enforces drops)
-                                              v
-[XDP Ring Buffer] <--- (Sampled Drop Events) <--- [NIC Driver (XDP)]
+```mermaid
+flowchart TD
+    subgraph Host Network
+        NIC[veth-host Interface]
+    end
+
+    subgraph Kernel Space
+        XDP[XDP Program]
+        AllowedMap[(allowed_ips HASH)]
+        BlockedMap[(blocked_ips HASH)]
+        RingBuf[[BPF Ring Buffer]]
+        
+        NIC -->|Incoming Packets| XDP
+        XDP -->|Lookup| AllowedMap
+        XDP -->|Lookup| BlockedMap
+        XDP -.->|Drop Events| RingBuf
+        XDP -->|Pass/Drop| NIC
+    end
+
+    subgraph User Space
+        LogFile(SSH Log File)
+        Daemon[C++ Engine]
+        Rules[(rules.yaml)]
+        DB[(engine.db SQLite)]
+        
+        LogFile -->|Tail/Parse| Daemon
+        Daemon <-->|Load Thresholds| Rules
+        RingBuf -.->|Read Samples| Daemon
+        Daemon -->|Block IP| BlockedMap
+        Daemon -->|Audit Trail| DB
+    end
 ```
 
 | Component | File | Description |
@@ -67,13 +85,13 @@ cd xdp-intrusion-mitigation-engine-review2
 
 ### Fedora
 ```bash
-sudo dnf install -y clang llvm libbpf-devel elfutils-libelf-devel zlib-devel yaml-cpp-devel sqlite-devel gcc-c++ make
+sudo dnf install -y clang llvm libbpf-devel elfutils-libelf-devel zlib-devel yaml-cpp-devel sqlite-devel nlohmann-json-devel gcc-c++ make
 ```
 
 ### Ubuntu
 ```bash
 sudo apt-get update
-sudo apt-get install -y clang libbpf-dev libelf-dev zlib1g-dev libyaml-cpp-dev libsqlite3-dev g++ make
+sudo apt-get install -y clang libbpf-dev libelf-dev zlib1g-dev libyaml-cpp-dev libsqlite3-dev nlohmann-json3-dev g++ make
 ```
 
 ### Kernel Checks

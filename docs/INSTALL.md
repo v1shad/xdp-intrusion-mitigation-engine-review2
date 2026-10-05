@@ -5,13 +5,13 @@
 ### Fedora
 ```bash
 sudo dnf update -y
-sudo dnf install -y clang llvm libbpf-devel elfutils-libelf-devel zlib-devel yaml-cpp-devel sqlite-devel gcc-c++ make
+sudo dnf install -y clang llvm libbpf-devel elfutils-libelf-devel zlib-devel yaml-cpp-devel sqlite-devel nlohmann-json-devel gcc-c++ make
 ```
 
 ### Ubuntu
 ```bash
 sudo apt-get update
-sudo apt-get install -y clang libbpf-dev libelf-dev zlib1g-dev libyaml-cpp-dev libsqlite3-dev g++ make
+sudo apt-get install -y clang libbpf-dev libelf-dev zlib1g-dev libyaml-cpp-dev libsqlite3-dev nlohmann-json3-dev g++ make
 ```
 
 ## 2. Compile the Project
