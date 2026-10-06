@@ -62,3 +62,21 @@ std::vector<Alert> RuleEngine::process(const Event& e) {
     }
     return generated_alerts;
 }
+
+std::size_t RuleEngine::get_count(const std::string& match_type, const std::string& src_ip) const {
+    auto it1 = windows_.find(match_type);
+    if (it1 != windows_.end()) {
+        auto it2 = it1->second.find(src_ip);
+        if (it2 != it1->second.end()) {
+            return it2->second.size();
+        }
+    }
+    return 0;
+}
+
+std::size_t RuleEngine::get_threshold(const std::string& match_type) const {
+    for (const auto& r : rules_) {
+        if (r.match_type == match_type) return r.threshold;
+    }
+    return 5;
+}

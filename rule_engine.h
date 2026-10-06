@@ -48,6 +48,8 @@ public:
     explicit RuleEngine(const std::string& yaml_path);
     std::vector<Alert> process(const Event& e);
     void override_rules(int threshold, int window_seconds);
+    std::size_t get_count(const std::string& match_type, const std::string& src_ip) const;
+    std::size_t get_threshold(const std::string& match_type) const;
 
 private:
     std::vector<RuleDef> rules_;

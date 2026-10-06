@@ -1,6 +1,6 @@
 # XDP Intrusion Mitigation Engine
 
-**Review 2 milestone: kernel enforcement, automated detection, live TUI dashboard.**
+**Review 2 milestone: kernel enforcement, automated detection, professional event logging.**
 
 ## What it does
 - **Kernel-space Enforcement:** Drops packets at the network interface driver level via eBPF/XDP.
@@ -8,7 +8,7 @@
 - **Rule Evaluation:** A C++20 daemon evaluates logs against thresholds (`rules.yaml`).
 - **Dynamic Blocking:** Offending IPs are added to an eBPF blocklist map.
 - **Audit Logging:** Logs events and alerts to an SQLite database (`engine.db`).
-- **Live Dashboard:** A real-time TUI dashboard monitors failures, blocklists, and drop counters.
+- **Live Event Log:** A clean, professional `stdout` event log showing real-time detection, blocks, and drop rates.
 
 **Not included in this milestone:** Web dashboard, playbooks, control socket, rate limiter, port-scan or HTTP detection, systemd packaging.
 
@@ -33,45 +33,26 @@ Dropping a packet early via XDP uses significantly less CPU than traditional fir
    ```
 2. **Start the Engine:**
    ```bash
-   sudo xdpguard run <iface>
+   sudo xdpguard run <iface> --enforce
    ```
-3. **Simulate an Attack:** See the [Real Attacker Mode](docs/REAL_ATTACKER.md) guide.
+3. **Simulate an Attack:** See the [Real Attacker Mode](docs/REAL_DEMO.md) guide.
 4. **View Reports & Cleanup:**
    ```bash
    xdpguard report
    sudo xdpguard cleanup <iface>
    ```
 
-## Live Dashboard
-
-When running `xdpguard run <iface>`, you will see a real-time TUI (Terminal User Interface):
-
+## Live Output Sample
 ```text
-=== XDP INTRUSION ENGINE DASHBOARD ===
-Mode: LIVE
-
---- Counters ---
-Passed: 450 | Dropped: 125
-
---- Live Auth Failures (Last 10) ---
-IP: 10.10.0.2 [3 fails]
-IP: 192.168.1.15 [1 fails]
-
---- Blocked IPs ---
-10.10.0.2 drops=125 expires=45s
-
---- Event Stream (Last 12) ---
-[EVENT] ssh_failed from 10.10.0.2
-[EVENT] ssh_failed from 10.10.0.2
-[ALERT] brute_force on 10.10.0.2
-[BLOCKED] 10.10.0.2
-[EVENT] packet_dropped from 10.10.0.2
-
-Hotkeys: [b]lock, [u]nblock, [a]llow, [d]ry-run toggle, [q]uit
+2026-10-06T12:00:00Z [INFO]     Engine started
+2026-10-06T12:00:15Z [AUTH]     SSH failure from 10.0.0.5 (4/5)
+2026-10-06T12:00:17Z [AUTH]     SSH failure from 10.0.0.5 (5/5)
+2026-10-06T12:00:17Z [BLOCKED]  10.0.0.5 ttl=60s
+2026-10-06T12:00:20Z [DROPPING] 10.0.0.5 total=25 rate=8/s
+2026-10-06T12:01:17Z [EXPIRED]  10.0.0.5 (ttl elapsed)
 ```
 
 ## Architecture
-
 ```mermaid
 flowchart TD
     subgraph Kernel Space
@@ -89,7 +70,7 @@ flowchart TD
 
     subgraph User Space
         LogFile(SSH Log)
-        Daemon[C++ Engine TUI]
+        Daemon[C++ Engine]
         Rules[(rules.yaml)]
         DB[(engine.db SQLite)]
         
@@ -100,5 +81,3 @@ flowchart TD
         Daemon -->|Audit| DB
     end
 ```
-
-Author: Vishad Dubey (GitHub: @v1shad)
