@@ -186,8 +186,8 @@ public:
         obj_ = bpf_object__open_file(obj_path.c_str(), nullptr);
         if (!obj_) throw std::runtime_error("failed to open bpf object");
         if (bpf_object__load(obj_)) throw std::runtime_error("failed to load bpf object");
-        prog_ = bpf_object__find_program_by_name(obj_, "xdp_prog");
-        if (!prog_) throw std::runtime_error("failed to find xdp_prog");
+        prog_ = bpf_object__find_program_by_name(obj_, "xdp_firewall");
+        if (!prog_) throw std::runtime_error("failed to find xdp_firewall");
         link_ = bpf_program__attach_xdp(prog_, ifindex);
         if (!link_) throw std::runtime_error("failed to attach xdp");
     }
