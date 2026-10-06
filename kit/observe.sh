@@ -74,6 +74,30 @@ case "$CMD" in
             echo "sqlite3 not installed."
         fi
         ;;
+    watch)
+        if [ "$#" -ne 1 ]; then
+            echo "Usage: $0 watch <iface>"
+            exit 1
+        fi
+        IFACE=$1
+        if [ -f /var/log/secure ]; then
+            LOG_PATH="/var/log/secure"
+        else
+            LOG_PATH="/var/log/auth.log"
+        fi
+        while true; do
+            clear
+            echo "=== Blocked IPs (XDP Map) ==="
+            command -v bpftool >/dev/null 2>&1 && bpftool map dump name blocked_ips 2>/dev/null || echo "Map dump not available."
+            echo ""
+            echo "=== Stats (DB Alerts) ==="
+            command -v sqlite3 >/dev/null 2>&1 && sqlite3 engine.db "SELECT count(*) AS total_alerts FROM alerts;" 2>/dev/null || echo "DB stats not available."
+            echo ""
+            echo "=== Last 5 SSH Failures ==="
+            grep "Failed password" "$LOG_PATH" 2>/dev/null | tail -n 5
+            sleep 2
+        done
+        ;;
     *)
         echo "Unknown command."
         exit 1

@@ -116,7 +116,7 @@ make
    ```bash
    sudo ./real_run.sh wlp2s0
    ```
-3. **Simulate an attack:** Have a friend (with consent) SSH into your machine with a wrong password multiple times. (See [Attack Scenarios](docs/ATTACK_SCENARIOS.md) for full scripts).
+3. **Simulate an attack:** Have a friend (with consent) manually attack your machine with their own tools (e.g., repeatedly trying wrong SSH passwords). (See [Real Attacker Mode](docs/REAL_ATTACKER.md) for a guide on how to safely demo this).
 4. **Observe the block:** You will see an alert and block action printed in the engine console, and their IP will be blocked.
 
 ## Usage
