@@ -18,7 +18,13 @@ RuleEngine::RuleEngine(const std::string& yaml_path) {
     }
 }
 
-// IP validation: NEVER trust logs when passing strings to a system
+void RuleEngine::override_rules(int threshold, int window_seconds) {
+    for (auto& r : rules_) {
+        if (threshold > 0) r.threshold = threshold;
+        if (window_seconds > 0) r.window = std::chrono::seconds(window_seconds);
+    }
+}
+
 static bool is_valid_ip(const std::string& ip) {
     struct in_addr addr;
     return inet_pton(AF_INET, ip.c_str(), &addr) == 1;
@@ -26,8 +32,6 @@ static bool is_valid_ip(const std::string& ip) {
 
 std::vector<Alert> RuleEngine::process(const Event& e) {
     std::vector<Alert> generated_alerts;
-    
-    // Strict IP validation
     if (!is_valid_ip(e.src_ip)) return generated_alerts;
 
     auto now = std::chrono::steady_clock::now();
@@ -52,8 +56,6 @@ std::vector<Alert> RuleEngine::process(const Event& e) {
                 a.block_seconds = rule.block_seconds;
                 a.ts_iso = e.ts_iso;
                 generated_alerts.push_back(a);
-                
-                // Clear the window so we don't alert again on the very next event
                 ip_map.erase(e.src_ip);
             }
         }

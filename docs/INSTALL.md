@@ -22,22 +22,10 @@ make
 ```
 This builds `xdp_prog.bpf.o` (kernel space) and `engine` (user space).
 
-## 3. Lab Environment Setup
-We use a network namespace (`attacker`) connected to the host via a virtual ethernet pair (`veth-host` and `veth-atk`).
-
-To create the lab:
+## 3. Verify
+Run the preflight check to ensure your real environment is ready:
 ```bash
-sudo ./setup_lab.sh
-```
-*This configures `10.10.0.1` on the host and `10.10.0.2` in the attacker namespace.*
-
-To reset the lab state entirely, run:
-```bash
-sudo ./review2_reset.sh
+sudo ./real_check.sh
 ```
 
-## 4. Teardown
-To safely tear down the lab environment and remove the interfaces:
-```bash
-sudo ./teardown_lab.sh
-```
+*(Note: For the optional offline lab rehearsal, refer to `lab/README.md`)*

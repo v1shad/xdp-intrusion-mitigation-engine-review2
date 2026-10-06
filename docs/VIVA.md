@@ -25,7 +25,7 @@
 *A8:* The engine uses a mutex to protect the `sqlite3` handle, preventing concurrent access crashes from multiple threads, but heavy locking could block the event processing loop.
 
 **Q9. What are the known limitations of this milestone?**
-*A9:* IPv4 only. No state persistence across reboots. Tested strictly on virtual `veth` interfaces. Vulnerable to invalid-UTF-8 crashes and log-rotation blindness.
+*A9:* IPv4 only. No state persistence across restarts. DHCP changes can affect block rules. Tested on physical Wi-Fi interfaces which typically use generic XDP (so line-rate performance isn't guaranteed). Vulnerable to invalid-UTF-8 crashes and log-rotation blindness (addressed partially via hardening).
 
 **Q10. Why is regex parsing done in user space instead of the kernel?**
 *A10:* The eBPF verifier heavily restricts loops and complexity. Text parsing and stateful time-window logic are too complex for XDP and belong in user space.

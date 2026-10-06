@@ -4,11 +4,11 @@
 #include <string>
 #include <vector>
 #include <chrono>
-#include <deque>
 #include <unordered_map>
+#include <deque>
 #include <yaml-cpp/yaml.h>
-#include <nlohmann/json.hpp>
 #include "event.h"
+#include <nlohmann/json.hpp>
 
 struct Alert {
     std::string rule;
@@ -18,7 +18,7 @@ struct Alert {
     std::string action;
     int block_seconds;
     std::string ts_iso;
-    
+
     nlohmann::json to_json() const {
         return nlohmann::json{
             {"rule", rule},
@@ -45,14 +45,13 @@ struct RuleDef {
 
 class RuleEngine {
 public:
-    RuleEngine(const std::string& yaml_path);
+    explicit RuleEngine(const std::string& yaml_path);
     std::vector<Alert> process(const Event& e);
+    void override_rules(int threshold, int window_seconds);
 
 private:
     std::vector<RuleDef> rules_;
-    using TimePoint = std::chrono::steady_clock::time_point;
-    // rule_name -> (ip -> deque of timestamps)
-    std::unordered_map<std::string, std::unordered_map<std::string, std::deque<TimePoint>>> windows_;
+    std::unordered_map<std::string, std::unordered_map<std::string, std::deque<std::chrono::steady_clock::time_point>>> windows_;
 };
 
-#endif // RULE_ENGINE_H
+#endif

@@ -1,13 +1,15 @@
 # Usage Guide
 
 ## Starting the Engine
-Start the engine by specifying the network interface, eBPF object file, and log file to tail.
+Start the engine by specifying the network interface, eBPF object file, log file to tail, and optional safety overrides.
 ```bash
-sudo ./engine veth-host xdp_prog.bpf.o /tmp/fake_auth.log
+sudo ./engine wlp2s0 xdp_prog.bpf.o /var/log/secure --ttl 60
 ```
 *Expected Output:*
 ```text
-[engine] XDP attached to veth-host. Commands: allow <ip> | unallow <ip> | block <ip> | unblock <ip> | list | stats | alerts | quit
+[engine] effective TTL: 60s
+[engine] XDP attached mode: generic
+[engine] Commands: allow <ip> | unallow <ip> | block <ip> | unblock <ip> | list | stats | alerts | quit
 ```
 
 ## Console Commands
@@ -44,7 +46,7 @@ unallow 10.10.0.2
 Print the current contents of the blocklist.
 ```text
 list
-  10.10.0.2  dropped=450 expires in 582s
+  10.10.0.2  dropped=450 expires in 58s
   (1 blocked IPs)
 ```
 
