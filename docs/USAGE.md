@@ -1,72 +1,40 @@
 # Usage Guide
 
-## Starting the Engine
-Start the engine by specifying the network interface, eBPF object file, log file to tail, and optional safety overrides.
+## `xdpguard doctor`
+Runs a read-only preflight check on your environment to ensure dependencies, logs, and interfaces are ready for the engine to run safely.
 ```bash
-sudo ./engine wlp2s0 xdp_prog.bpf.o /var/log/secure --ttl 60
-```
-*Expected Output:*
-```text
-[engine] effective TTL: 60s
-[engine] XDP attached mode: generic
-[engine] Commands: allow <ip> | unallow <ip> | block <ip> | unblock <ip> | list | stats | alerts | quit
+xdpguard doctor
 ```
 
-## Console Commands
+## `xdpguard run <iface>`
+Starts the intrusion engine and attaches the eBPF program to the specified interface.
+```bash
+sudo xdpguard run wlp2s0 --ttl 60
+```
+### Flags:
+* `--allow <IP>`: Whitelist an IP address so it is never dropped. Can be specified multiple times.
+* `--dry-run`: Evaluate logs and generate alerts, but do not actually block IPs in the kernel.
+* `--ttl <S>`: Time-to-live for a block in seconds (default: 60).
+* `--threshold <N>`: Override the threshold for failures before blocking.
+* `--window <S>`: Override the sliding window duration in seconds.
+* `--log <PATH>`: Manually specify the SSH log path instead of auto-detecting.
+* `--no-tui`: Fall back to the plain text console instead of the live dashboard.
 
-### block `<ip>`
-Manually block an IP address.
-```text
-block 10.10.0.2
-[BLOCKED] 10.10.0.2 (manual)
+### TUI Hotkeys
+* `b`: Block an IP address manually.
+* `u`: Unblock an IP address.
+* `a`: Allowlist an IP address.
+* `d`: Toggle dry-run mode on/off on the fly.
+* `q`: Safely quit the engine and detach the XDP program.
+
+## `xdpguard cleanup <iface>`
+A safety fallback command to force detach any lingering XDP programs from an interface.
+```bash
+sudo xdpguard cleanup wlp2s0
 ```
 
-### unblock `<ip>`
-Remove an IP address from the blocklist.
-```text
-unblock 10.10.0.2
-[UNBLOCKED] 10.10.0.2
-```
-
-### allow `<ip>`
-Whitelist an IP address so it is never dropped.
-```text
-allow 10.10.0.2
-[ALLOWED] 10.10.0.2
-```
-
-### unallow `<ip>`
-Remove an IP from the whitelist.
-```text
-unallow 10.10.0.2
-[UNALLOWED] 10.10.0.2
-```
-
-### list
-Print the current contents of the blocklist.
-```text
-list
-  10.10.0.2  dropped=450 expires in 58s
-  (1 blocked IPs)
-```
-
-### stats
-Print the global XDP drop and pass counters.
-```text
-stats
-  packets dropped=450  passed=12
-```
-
-### alerts
-Print the last 10 generated alerts from the SQLite database.
-```text
-alerts
-  [2026-10-05T12:00:00Z] SSH_BRUTE_FORCE | IP: 10.10.0.2 | Action: block
-```
-
-### quit
-Detach the eBPF program and shut down the engine cleanly.
-```text
-quit
-[engine] shutting down, detaching XDP
+## `xdpguard report`
+Reads the `engine.db` SQLite database and prints the most recent alerts and total event counts.
+```bash
+xdpguard report
 ```

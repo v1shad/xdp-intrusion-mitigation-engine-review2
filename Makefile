@@ -23,3 +23,13 @@ engine: engine.cpp rule_engine.cpp rule_engine.h storage.cpp storage.h
 
 clean:
 	rm -f xdp_prog.bpf.o engine
+
+install: engine xdp_prog.bpf.o
+	install -d /usr/local/lib/xdp-review2
+	install -m 755 engine /usr/local/lib/xdp-review2/
+	install -m 644 xdp_prog.bpf.o /usr/local/lib/xdp-review2/
+	ln -sf /usr/local/lib/xdp-review2/engine /usr/local/bin/xdpguard
+
+uninstall:
+	rm -rf /usr/local/lib/xdp-review2
+	rm -f /usr/local/bin/xdpguard

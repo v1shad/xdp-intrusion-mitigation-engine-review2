@@ -5,7 +5,7 @@ This document outlines how to safely demo the Review 2 engine by letting a conse
 ## Rules to Agree with Your Friend
 
 Before starting, clearly establish these boundaries to ensure a safe and controlled demonstration:
-1. **Own Network Only:** Ensure both of you are connected to your personal home Wi-Fi or mobile hotspot. Do not do this on university or public networks.
+1. **Own Network Only:** Ensure both of you are connected to your personal home Wi-Fi or mobile hotspot.
 2. **Only My Laptop:** They must strictly target the IP address you provide them.
 3. **Time Limit:** Agree on a maximum time limit for the attacks (e.g., 5-10 minutes).
 4. **Short Floods:** If they plan to use volumetric attacks (like ping floods), they should cap them at 5-10 seconds to avoid crashing the local router.
@@ -23,51 +23,48 @@ Before starting, clearly establish these boundaries to ensure a safe and control
 | **Any traffic AFTER block** | **Yes** | XDP drops *all* protocols (Ping, HTTP, SYN) line-rate for a blocked IP. |
 
 **How to Explain a Miss Honestly:**
-If your friend runs a port scan and asks why they weren't blocked, plainly explain that the Review 2 milestone relies purely on SSH log detection. XDP is only programmed to drop packets *after* the user-space daemon makes a block decision based on those logs. Mention that future milestones will introduce raw packet inspection for port scans.
+If your friend runs a port scan and asks why they weren't blocked, plainly explain that the Review 2 milestone relies purely on SSH log detection. XDP is only programmed to drop packets *after* the user-space daemon makes a block decision based on those logs. Future milestones will introduce raw packet inspection for scans.
 
 ## Suggested Session Plan for the Owner
 
-Follow this sequence to ensure a smooth showcase:
-
-1. **Setup:**
-   [TARGET] Run `sudo ./kit/target_setup.sh <iface>`. Note the Target IP.
+1. **Setup & Preflight:**
+   [TARGET] Run `xdpguard doctor` to ensure your SSH service and logs are working properly. Note your Interface and IP address.
 
 2. **Dry Run (Safety First):**
    [TARGET] Start the engine with a strict TTL and dry-run mode:
    ```bash
-   sudo ./real_run.sh <iface> --ttl 60 --dry-run
+   sudo xdpguard run <iface> --ttl 60 --dry-run
    ```
    *The engine will auto-allowlist your default gateway. Verify this in the startup output.*
 
-3. **Verify Observability:**
-   [TARGET] In a second terminal, start the observer:
+3. **Live Mode & Dashboard:**
+   [TARGET] Stop the dry-run engine (Hotkey `q`), and restart it in live mode:
    ```bash
-   sudo ./kit/observe.sh watch <iface>
+   sudo xdpguard run <iface> --ttl 60
    ```
+   Leave the TUI dashboard open on your screen.
 
-4. **Live Mode:**
-   [TARGET] Stop the dry-run engine (`quit`), and restart it in live mode:
-   ```bash
-   sudo ./real_run.sh <iface> --ttl 60
-   ```
+4. **The Attack:**
+   Provide the Target IP to your friend. Ask them to verify baseline connectivity (e.g., ping), then tell them to manually trigger SSH auth failures:
+   [FRIEND] `ssh -o PubkeyAuthentication=no nosuchuser@<TARGET_IP>`
+   [FRIEND] Type random passwords repeatedly.
 
-5. **The Attack:**
-   Provide the Target IP to your friend. Ask them to verify baseline connectivity (ping, curl port 8000), then tell them to try guessing SSH passwords.
-   [FRIEND] Runs their own SSH commands or tools against your IP.
+5. **The Block:**
+   Watch your dashboard. Once the threshold is crossed, the IP will appear in the Blocked IPs section with an expiration countdown.
+   Ask your friend to try pinging again. They will be completely blocked.
+   You can manually press `u` to unblock them early, or `a` to allowlist them.
 
-6. **The Block:**
-   Watch your `observe.sh` terminal and engine console. Once the threshold is crossed, the IP will appear in the XDP Map.
-   Ask your friend to try pinging or opening the web port again. They will be completely blocked.
-
-7. **Cleanup:**
-   [TARGET] Type `quit` in the engine. Run `sudo ./kit/target_teardown.sh <iface>`.
+6. **Reporting & Cleanup:**
+   [TARGET] Press `q` to quit the engine.
+   [TARGET] Run `xdpguard report` to view the SQLite database event totals.
+   [TARGET] Ensure XDP is detached by running `sudo xdpguard cleanup <iface>`.
 
 ## Troubleshooting
 
 | Problem | Cause | Solution |
 |---|---|---|
-| Friend cannot ping baseline | Client Isolation / Firewalld | Check router settings (AP Isolation) or run `kit/target_setup.sh`. |
-| Connection refused | sshd down / port blocked | Run `kit/target_setup.sh` to start `sshd` and open firewall. |
-| No log lines appear | Password auth disabled | Ensure `PasswordAuthentication yes` in `sshd_config`. |
+| Friend cannot ping baseline | Client Isolation / Firewalld | Check router settings (AP Isolation) or run `firewall-cmd --add-service=ssh`. |
+| Connection refused | sshd down | Run `systemctl start sshd`. |
+| No log lines appear | Password auth disabled | Ensure `PasswordAuthentication yes` in `/etc/ssh/sshd_config`. |
 | DHCP changed the IP | Network lease expired | Stop engine, find new IP (`ip addr`), update friend's target IP. |
-| Locked out | Local IP blocked | Wait for TTL to expire (default 60s), or stop engine (`Ctrl-C`). |
+| Locked out | Local IP blocked | Wait for TTL to expire (default 60s), or stop engine (`q`). |
