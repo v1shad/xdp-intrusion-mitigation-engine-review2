@@ -64,11 +64,15 @@ std::vector<Alert> RuleEngine::process(const Event& e) {
 }
 
 std::size_t RuleEngine::get_count(const std::string& match_type, const std::string& src_ip) const {
-    auto it1 = windows_.find(match_type);
-    if (it1 != windows_.end()) {
-        auto it2 = it1->second.find(src_ip);
-        if (it2 != it1->second.end()) {
-            return it2->second.size();
+    for (const auto& r : rules_) {
+        if (r.match_type == match_type) {
+            auto it1 = windows_.find(r.name);
+            if (it1 != windows_.end()) {
+                auto it2 = it1->second.find(src_ip);
+                if (it2 != it1->second.end()) {
+                    return it2->second.size();
+                }
+            }
         }
     }
     return 0;

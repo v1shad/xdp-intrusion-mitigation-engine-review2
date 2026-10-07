@@ -488,8 +488,12 @@ int main(int argc, char** argv) {
             
             int n = rule_engine.get_count("ssh_failed", e.src_ip);
             int thresh = rule_engine.get_threshold("ssh_failed");
-            std::string auth_col = (n >= thresh - 1) ? "\x1b[33m" : "";
-            if (e.source == "ssh_log") print_log("[AUTH]", "SSH failure from " + e.src_ip + " (" + std::to_string(n) + "/" + std::to_string(thresh) + ")", auth_col);
+            
+            if (n == 0 && !alerts.empty()) n = thresh;
+            
+            if (e.source == "ssh_log") {
+                print_log("[AUTH]", "SSH failure from " + e.src_ip + " (" + std::to_string(n) + "/" + std::to_string(thresh) + ")", "\x1b[33m");
+            }
             
             for (const auto& a : alerts) {
                 if (dry_run) {
