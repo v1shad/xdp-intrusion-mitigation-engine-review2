@@ -224,8 +224,12 @@ public:
         if (bpf_map_lookup_elem(allow_fd_, &ip, &allowed) == 0) return false;
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
-        std::uint64_t expires = ts.tv_sec + ttl.count();
-        if (bpf_map_update_elem(block_fd_, &ip, &expires, manual ? BPF_ANY : BPF_NOEXIST) == 0) {
+        
+        struct block_record rec;
+        rec.hits = 0;
+        rec.expires_at_ns = (static_cast<uint64_t>(ts.tv_sec) + ttl.count()) * 1000000000ULL + ts.tv_nsec;
+
+        if (bpf_map_update_elem(block_fd_, &ip, &rec, manual ? BPF_ANY : BPF_NOEXIST) == 0) {
             std::string reason = manual ? "manual" : "automatic";
             print_log("[BLOCKED]", ip_to_string(ip) + " ttl=" + std::to_string(ttl.count()) + "s " + reason, "\x1b[31m");
             return true;
@@ -240,10 +244,11 @@ public:
     void cleanup_expired() {
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
+        std::uint64_t now_ns = static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + ts.tv_nsec;
         std::uint32_t key = 0, next_key;
         while (bpf_map_get_next_key(block_fd_, &key, &next_key) == 0) {
-            std::uint64_t expires;
-            if (bpf_map_lookup_elem(block_fd_, &next_key, &expires) == 0 && ts.tv_sec >= (time_t)expires) {
+            struct block_record rec;
+            if (bpf_map_lookup_elem(block_fd_, &next_key, &rec) == 0 && rec.expires_at_ns > 0 && now_ns >= rec.expires_at_ns) {
                 bpf_map_delete_elem(block_fd_, &next_key);
                 bpf_map_delete_elem(stats_fd_, &next_key);
                 print_log("[EXPIRED]", ip_to_string(next_key) + " (ttl elapsed)");
@@ -254,13 +259,18 @@ public:
     void print_blocked() const {
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
+        std::uint64_t now_ns = static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + ts.tv_nsec;
         std::uint32_t key = 0, next_key;
         int count = 0;
         while (bpf_map_get_next_key(block_fd_, &key, &next_key) == 0) {
-            std::uint64_t expires;
-            if (bpf_map_lookup_elem(block_fd_, &next_key, &expires) == 0) {
-                int left = static_cast<int>(expires - ts.tv_sec);
-                log_info(ip_to_string(next_key) + " expires in " + std::to_string(left) + "s");
+            struct block_record rec;
+            if (bpf_map_lookup_elem(block_fd_, &next_key, &rec) == 0) {
+                if (rec.expires_at_ns == 0) {
+                    log_info(ip_to_string(next_key) + " expires in NEVER");
+                } else {
+                    int left = rec.expires_at_ns > now_ns ? static_cast<int>((rec.expires_at_ns - now_ns) / 1000000000ULL) : 0;
+                    log_info(ip_to_string(next_key) + " expires in " + std::to_string(left) + "s");
+                }
                 count++;
             }
             key = next_key;
