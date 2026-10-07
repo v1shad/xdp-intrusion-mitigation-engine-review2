@@ -7,11 +7,12 @@
 #include <regex>
 #include <fstream>
 #include <csignal>
-#include <iomanip>
 #include <unordered_set>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <filesystem>
+#include <dirent.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
@@ -29,8 +30,6 @@
 
 using namespace std::chrono_literals;
 
-enum class EngineMode { Detect, Enforce };
-static std::atomic<EngineMode> g_mode{EngineMode::Detect};
 static bool use_color = true;
 
 std::optional<std::uint32_t> parse_ipv4(const std::string& text) {
@@ -114,7 +113,6 @@ std::string get_iso_time() {
 void print_log(std::string tag, const std::string& msg, const std::string& color_code = "") {
     std::string reset = use_color ? "\x1b[0m" : "";
     std::string color = use_color ? color_code : "";
-    // fixed width tag 10 chars: e.g. "[INFO]" -> "[INFO]    "
     while (tag.length() < 10) tag += " ";
     std::cout << get_iso_time() << " " << color << tag << reset << " " << msg << "\n";
 }
@@ -220,15 +218,16 @@ public:
         bpf_map_delete_elem(allow_fd_, &ip);
         log_info("removed from allowlist: " + ip_to_string(ip));
     }
-    bool block(std::uint32_t ip, const std::string& rule, std::chrono::seconds ttl, bool manual = false) {
+    bool block(std::uint32_t ip, std::chrono::seconds ttl, bool detect_only, bool manual = false) {
+        if (detect_only) return false;
         std::uint8_t allowed;
         if (bpf_map_lookup_elem(allow_fd_, &ip, &allowed) == 0) return false;
         struct timespec ts;
         clock_gettime(CLOCK_MONOTONIC, &ts);
         std::uint64_t expires = ts.tv_sec + ttl.count();
         if (bpf_map_update_elem(block_fd_, &ip, &expires, manual ? BPF_ANY : BPF_NOEXIST) == 0) {
-            std::string reason = manual ? "manual" : "rule=" + rule;
-            print_log("[BLOCKED]", ip_to_string(ip) + " ttl=" + std::to_string(ttl.count()) + "s (" + reason + ")", "\x1b[31m");
+            std::string reason = manual ? "manual" : "automatic";
+            print_log("[BLOCKED]", ip_to_string(ip) + " ttl=" + std::to_string(ttl.count()) + "s " + reason, "\x1b[31m");
             return true;
         }
         return false;
@@ -292,7 +291,7 @@ struct DropState {
 static std::map<std::string, DropState> g_drop_states;
 static std::mutex g_drop_mu;
 
-static int handle_event(void* ctx, void *data, size_t size) {
+static int handle_event(void* /*ctx*/, void *data, size_t size) {
     if (size < sizeof(struct drop_event)) return 0;
     auto* ev = static_cast<struct drop_event*>(data);
     std::string ip = ip_to_string(ev->src_ip);
@@ -314,105 +313,50 @@ static int handle_event(void* ctx, void *data, size_t size) {
     return 0;
 }
 
-int cmd_doctor() {
-    std::cout << "=== Preflight Doctor ===\n";
-    struct utsname buffer;
-    if (uname(&buffer) == 0) std::cout << "PASS: Kernel " << buffer.release << "\n";
-    else std::cout << "FAIL: uname failed\n";
-    
-    if (access("/sys/kernel/btf/vmlinux", R_OK) == 0) std::cout << "PASS: BTF file found\n";
-    else std::cout << "FAIL: BTF file missing. Fix: install kernel headers\n";
-    
-    if (access("/run/sshd.pid", R_OK) == 0 || access("/var/run/sshd.pid", R_OK) == 0) std::cout << "PASS: sshd running\n";
-    else std::cout << "FAIL: sshd not running. Fix: sudo systemctl start sshd\n";
-    
-    if (access("/run/rsyslogd.pid", R_OK) == 0 || access("/var/run/rsyslogd.pid", R_OK) == 0) std::cout << "PASS: rsyslog running\n";
-    else std::cout << "WARN: rsyslog not running. Log tailer may fail if logs aren't written.\n";
-    
-    if (access("/var/log/secure", R_OK) == 0) std::cout << "PASS: /var/log/secure readable\n";
-    else if (access("/var/log/auth.log", R_OK) == 0) std::cout << "PASS: /var/log/auth.log readable\n";
-    else std::cout << "FAIL: ssh log not readable. Fix: check permissions on /var/log/secure or /var/log/auth.log\n";
-    
-    std::ifstream sshd_config("/etc/ssh/sshd_config");
-    bool found_pwd_auth = false;
-    std::string line;
-    while (std::getline(sshd_config, line)) {
-        if (line.find("PasswordAuthentication") != std::string::npos && line[0] != '#') {
-            std::cout << "PASS: PasswordAuth config: " << line << "\n";
-            found_pwd_auth = true;
-            break;
+bool check_process(const std::string& name) {
+    DIR* dir = opendir("/proc");
+    if (!dir) return false;
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != nullptr) {
+        if (!isdigit(ent->d_name[0])) continue;
+        std::string path = std::string("/proc/") + ent->d_name + "/comm";
+        std::ifstream f(path);
+        std::string comm;
+        if (f >> comm && comm == name) {
+            closedir(dir);
+            return true;
         }
     }
-    if (!found_pwd_auth) std::cout << "WARN: PasswordAuthentication not explicitly set in main config\n";
-    
-    struct ifaddrs *ifaddr, *ifa;
-    if (getifaddrs(&ifaddr) == 0) {
-        std::cout << "PASS: Interfaces with IPv4:\n";
-        for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
-            if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET) continue;
-            char ip[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr, ip, INET_ADDRSTRLEN);
-            std::cout << "      - " << ifa->ifa_name << ": " << ip << "\n";
-        }
-        freeifaddrs(ifaddr);
-    } else std::cout << "FAIL: getifaddrs failed\n";
-    
-    std::ifstream route("/proc/net/route");
-    if (route.is_open()) std::cout << "PASS: Default gateway routing entry found\n";
-    else std::cout << "FAIL: Cannot read /proc/net/route\n";
-    return 0;
+    closedir(dir);
+    return false;
 }
 
-int cmd_cleanup(int argc, char** argv) {
-    if (argc < 3) {
-        std::cerr << "Usage: engine cleanup <iface>\n";
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        std::cerr << "Usage: sudo " << argv[0] << " <iface> [--allow IP]... [--ttl S] [--threshold N] [--window S] [--dry-run] [--log PATH]\n";
         return 1;
     }
-    std::string iface = argv[2];
-    unsigned int ifindex = if_nametoindex(iface.c_str());
-    if (ifindex == 0) {
-        std::cerr << "Invalid interface\n";
-        return 1;
-    }
-    bpf_xdp_detach(ifindex, 0, nullptr);
-    std::cout << "Detached XDP program from " << iface << "\n";
-    return 0;
-}
-
-int cmd_report() {
-    Storage storage{"engine.db"};
-    std::cout << "=== Engine Report ===\n";
-    storage.print_last_alerts(10);
-    return 0;
-}
-
-int cmd_run(int argc, char** argv) {
-    if (argc < 3) {
-        std::cerr << "Usage: engine run <iface> [--allow IP ...] [--ttl S] [--threshold N] [--window S] [--enforce|--dry-run] [--log PATH] [--no-color]\n";
-        return 1;
-    }
-    std::string iface = argv[2];
+    std::string iface = argv[1];
     std::unordered_set<std::uint32_t> allow{*parse_ipv4("127.0.0.1")};
     add_iface_ips(allow, iface);
     add_gateway_ips(allow);
 
     int ttl = 60;
-    int threshold = 5; // rules.yaml will override
+    int threshold = 5;
     int window = 60;
+    bool dry_run = false;
     std::string logfile;
     if (access("/var/log/secure", R_OK) == 0) logfile = "/var/log/secure";
     else logfile = "/var/log/auth.log";
     
     use_color = isatty(STDOUT_FILENO);
 
-    for (int i = 3; i < argc; i++) {
+    for (int i = 2; i < argc; i++) {
         std::string_view arg{argv[i]};
         if (arg == "--allow" && i + 1 < argc) {
             if (auto ip = parse_ipv4(argv[++i])) allow.insert(*ip);
-        } else if (arg == "--enforce") {
-            g_mode = EngineMode::Enforce;
         } else if (arg == "--dry-run") {
-            g_mode = EngineMode::Detect;
+            dry_run = true;
         } else if (arg == "--ttl" && i + 1 < argc) {
             ttl = std::stoi(argv[++i]);
         } else if (arg == "--threshold" && i + 1 < argc) {
@@ -421,17 +365,75 @@ int cmd_run(int argc, char** argv) {
             window = std::stoi(argv[++i]);
         } else if (arg == "--log" && i + 1 < argc) {
             logfile = argv[++i];
-        } else if (arg == "--no-color") {
-            use_color = false;
         }
     }
     ttl = std::min(std::max(ttl, 1), 600);
 
+    bool all_pass = true;
+    auto check_fail = [&](const std::string& msg) {
+        std::cerr << "FAIL: " << msg << "\n";
+        all_pass = false;
+    };
+
+    if (getuid() != 0) check_fail("Not running as root. Fix: use sudo");
+    else std::cout << "PASS: Running as root\n";
+
+    struct utsname buffer;
+    if (uname(&buffer) == 0) std::cout << "PASS: Kernel " << buffer.release << "\n";
+    else check_fail("uname failed");
+    
+    if (access("/sys/kernel/btf/vmlinux", R_OK) == 0) std::cout << "PASS: BTF file found\n";
+    else check_fail("BTF file missing. Fix: install kernel headers");
+
+    unsigned int ifindex = if_nametoindex(iface.c_str());
+    if (ifindex > 0) std::cout << "PASS: Interface " << iface << " exists\n";
+    else check_fail("Interface " + iface + " not found");
+
+    if (check_process("sshd")) std::cout << "PASS: sshd is running\n";
+    else check_fail("sshd not running. Fix: sudo systemctl start sshd");
+
+    if (check_process("rsyslogd")) std::cout << "PASS: rsyslogd is running\n";
+    else std::cout << "WARN: rsyslogd not running (journal-only setups do not populate /var/log by default)\n";
+
+    if (access(logfile.c_str(), R_OK) == 0) std::cout << "PASS: " << logfile << " readable\n";
+    else check_fail(logfile + " not readable. Fix: ensure rsyslog is logging auth authpriv to it");
+
+    auto check_ssh_conf = [&](const std::string& p) {
+        std::ifstream f(p);
+        std::string line;
+        while (std::getline(f, line)) {
+            if (line.find("PasswordAuthentication") != std::string::npos && line[0] != '#') return line;
+        }
+        return std::string("");
+    };
+    std::string pwd_auth = check_ssh_conf("/etc/ssh/sshd_config");
+    if (pwd_auth.empty()) {
+        for (const auto& entry : std::filesystem::directory_iterator("/etc/ssh/sshd_config.d")) {
+            pwd_auth = check_ssh_conf(entry.path());
+            if (!pwd_auth.empty()) break;
+        }
+    }
+    if (pwd_auth.find("yes") != std::string::npos) std::cout << "PASS: " << pwd_auth << "\n";
+    else std::cout << "WARN: PasswordAuth not explicitly 'yes'. Failed password lines will not appear in logs if disabled!\n";
+
+    if (ifindex > 0) {
+        __u32 prog_id = 0;
+        if (bpf_xdp_query_id(ifindex, 0, &prog_id) == 0 && prog_id > 0) {
+            check_fail("XDP program already attached (ID: " + std::to_string(prog_id) + "). Fix: sudo ip link set dev " + iface + " xdp off");
+        } else {
+            std::cout << "PASS: No existing XDP program attached to " << iface << "\n";
+        }
+    }
+
+    if (!all_pass) return 1;
+
     std::cout << "=== ENGINE STARTUP BANNER ===\n";
     std::cout << "Interface: " << iface << "\n";
+    std::cout << "XDP Mode:  Auto\n";
     std::cout << "Log Path:  " << logfile << "\n";
     std::cout << "TTL:       " << ttl << "s\n";
-    std::cout << "Mode:      " << (g_mode == EngineMode::Enforce ? "ENFORCE" : "DETECT") << "\n";
+    std::cout << "Threshold: " << threshold << "\n";
+    std::cout << "Window:    " << window << "s\n";
     std::cout << "Allowed:   ";
     for (auto ip : allow) std::cout << ip_to_string(ip) << " ";
     std::cout << "\n=============================\n";
@@ -480,14 +482,13 @@ int cmd_run(int argc, char** argv) {
             if (e.source == "ssh_log") print_log("[AUTH]", "SSH failure from " + e.src_ip + " (" + std::to_string(n) + "/" + std::to_string(thresh) + ")", auth_col);
             
             for (const auto& a : alerts) {
-                bool is_detect = (g_mode == EngineMode::Detect);
-                if (is_detect) {
-                    print_log("[DETECTED]", a.src_ip + " crossed the threshold (detect mode, would block)", "\x1b[34m");
+                if (dry_run) {
+                    print_log("[DETECTED]", a.src_ip + " crossed the threshold (would block)", "\x1b[34m");
                     ActionRecord act{a.ts_iso, a.src_ip, "detected", a.rule};
                     storage.insert_action(act);
                 } else {
                     if (auto ip = parse_ipv4(a.src_ip)) {
-                        if (blocklist.block(*ip, a.rule, std::chrono::seconds(ttl), false)) {
+                        if (blocklist.block(*ip, std::chrono::seconds(ttl), false, false)) {
                             ActionRecord act{a.ts_iso, a.src_ip, "block", a.rule};
                             storage.insert_action(act);
                         }
@@ -517,15 +518,9 @@ int cmd_run(int argc, char** argv) {
             else if (cmd == "list")  blocklist.print_blocked();
             else if (cmd == "stats") blocklist.print_stats();
             else if (cmd == "alerts") storage.print_last_alerts(10);
-            else if (cmd == "mode") {
-                if (arg == "detect") { g_mode = EngineMode::Detect; print_log("[MODE]", "detect"); }
-                else if (arg == "enforce") { g_mode = EngineMode::Enforce; print_log("[MODE]", "enforce"); }
-                else if (arg == "show") { print_log("[MODE]", g_mode == EngineMode::Enforce ? "enforce" : "detect"); }
-                else log_warn("usage: mode detect|enforce|show");
-            }
             else if (cmd == "block" || cmd == "unblock" || cmd == "allow" || cmd == "unallow") {
                 if (auto ip = parse_ipv4(arg)) {
-                    if (cmd == "block") blocklist.block(*ip, "manual", std::chrono::seconds(ttl), true);
+                    if (cmd == "block") blocklist.block(*ip, std::chrono::seconds(ttl), false, true);
                     else if (cmd == "unblock") blocklist.unblock(*ip);
                     else if (cmd == "allow") blocklist.allow_ip(*ip);
                     else if (cmd == "unallow") blocklist.unallow_ip(*ip);
@@ -538,18 +533,4 @@ int cmd_run(int argc, char** argv) {
         return 1;
     }
     return 0;
-}
-
-int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "Usage: engine <doctor|run|cleanup|report> [args...]\n";
-        return 1;
-    }
-    std::string cmd = argv[1];
-    if (cmd == "doctor") return cmd_doctor();
-    if (cmd == "cleanup") return cmd_cleanup(argc, argv);
-    if (cmd == "report") return cmd_report();
-    if (cmd == "run") return cmd_run(argc, argv);
-    std::cerr << "Unknown subcommand: " << cmd << "\n";
-    return 1;
 }

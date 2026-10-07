@@ -57,8 +57,8 @@ run_scenario() {
             drops_start=$(get_iptables_filter_drops)
         elif [ "$name" == "XDP" ]; then
             > /tmp/xdp_out.txt
-            touch /tmp/fake_auth.log
-            (echo "block 10.10.0.2 manual"; sleep $DURATION; sleep 2; echo "stats"; sleep 1; echo "quit") | ./engine veth-host xdp_prog.bpf.o /tmp/fake_auth.log > /tmp/xdp_out.txt 2>&1 &
+            touch /tmp/bench_auth.log
+            (echo "block 10.10.0.2 manual"; sleep $DURATION; sleep 2; echo "stats"; sleep 1; echo "quit") | sudo ./engine veth-host --log /tmp/bench_auth.log > /tmp/xdp_out.txt 2>&1 &
             ENGINE_PID=$!
             sleep 2
             
