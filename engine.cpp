@@ -528,6 +528,17 @@ int main(int argc, char** argv) {
             else if (cmd == "list")  blocklist.print_blocked();
             else if (cmd == "stats") blocklist.print_stats();
             else if (cmd == "alerts") storage.print_last_alerts(10);
+            else if (cmd == "mode") {
+                if (arg == "enforce") {
+                    dry_run = false;
+                    print_log("[MODE]", "enforce");
+                } else if (arg == "detect") {
+                    dry_run = true;
+                    print_log("[MODE]", "detect");
+                } else {
+                    log_info("Current mode: " + std::string(dry_run ? "detect" : "enforce"));
+                }
+            }
             else if (cmd == "block" || cmd == "unblock" || cmd == "allow" || cmd == "unallow") {
                 if (auto ip = parse_ipv4(arg)) {
                     if (cmd == "block") blocklist.block(*ip, std::chrono::seconds(ttl), false, true);
