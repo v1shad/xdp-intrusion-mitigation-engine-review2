@@ -131,10 +131,10 @@ Allowed:   127.0.0.1 192.168.1.100 192.168.1.1
 * *Proves:* The tcpdump will be completely silent! The packets are dropped by XDP before `tcpdump` even sees them.
 * [MY LAPTOP] Verify the eBPF map: `sudo bpftool map dump name blocked_ips`
 
-**5. Ping Flood Under Block**
+**5. Packet Flood Under Block**
 * [FRIEND LAPTOP (Linux)] `sudo ping -f <TARGET_IP>` (Run for 5 seconds, then stop).
-* [FRIEND LAPTOP (Windows)] Open PowerShell and run: `while ($true) { ping -n 1 -w 1 <TARGET_IP> | Out-Null }` (Press Ctrl+C to stop).
-* [MY LAPTOP] You will see `[DROPPING]` tags in the event log showing the exact drop rate (e.g. `rate=4000/s`).
+* [FRIEND LAPTOP (Windows)] Open PowerShell and run a UDP flood: `$c = New-Object System.Net.Sockets.UdpClient; $c.Connect("<TARGET_IP>", 80); $b = [byte[]]::new(64); while ($true) { $c.Send($b, $b.Length) | Out-Null }` (Press Ctrl+C to stop).
+* [MY LAPTOP] You will see `[DROPPING]` tags in the event log showing the exact drop rate (e.g. `rate=40000/s`).
 * *Proves:* The engine's live telemetry thread reliably polls kernel memory to report high-volume line-rate drops directly to user space.
 
 **6. Recovery**
