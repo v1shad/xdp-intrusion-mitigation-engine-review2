@@ -114,7 +114,7 @@ void print_log(std::string tag, const std::string& msg, const std::string& color
     std::string reset = use_color ? "\x1b[0m" : "";
     std::string color = use_color ? color_code : "";
     while (tag.length() < 10) tag += " ";
-    std::cout << get_iso_time() << " " << color << tag << reset << " " << msg << "\n";
+    std::cout << get_iso_time() << " " << color << tag << reset << " " << msg << std::endl;
 }
 
 void log_info(const std::string& msg) { print_log("[INFO]", msg); }
@@ -152,6 +152,7 @@ public:
             }
             last_size = st_buf.st_size;
             in.clear();
+            in.seekg(0, std::ios::cur);
             std::this_thread::sleep_for(200ms);
         }
     }
