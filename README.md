@@ -111,17 +111,18 @@ Allowed:   127.0.0.1 192.168.1.100 192.168.1.1
 ## Walkthrough Demo Steps
 
 **1. Baseline Connectivity**
-* [FRIEND LAPTOP] `ping -c 3 <TARGET_IP>`
-* [FRIEND LAPTOP] `curl -I http://<TARGET_IP>`
+* [FRIEND LAPTOP (Linux)] `ping -c 3 <TARGET_IP>`
+* [FRIEND LAPTOP (Windows)] `ping -n 3 <TARGET_IP>`
 * *Proves:* The friend can successfully reach your laptop.
 
 **2. Automatic Blocking via SSH Guessing**
-* [FRIEND LAPTOP] `ssh nosuchuser@<TARGET_IP>` (Type wrong passwords repeatedly)
+* [FRIEND LAPTOP] `ssh fakeuser@<TARGET_IP>` (Type wrong passwords repeatedly)
 * [MY LAPTOP] You will see `[AUTH]` warnings tracking the `(n/threshold)` progress. Once it crosses 5, a red `[BLOCKED]` log appears.
 * *Proves:* The C++ tailer correctly identified the threat and updated the kernel eBPF map.
 
 **3. The Iron Wall (All traffic dies)**
-* [FRIEND LAPTOP] `ping -c 3 <TARGET_IP>` or `nmap -Pn -p 22,80 <TARGET_IP>`
+* [FRIEND LAPTOP (Linux)] `ping -c 3 <TARGET_IP>` 
+* [FRIEND LAPTOP (Windows)] `ping -n 3 <TARGET_IP>` 
 * *Proves:* The attacker's connection will completely freeze. XDP drops *all* protocols for that IP at the driver level.
 
 **4. Proof of Kernel Drops**
@@ -131,13 +132,14 @@ Allowed:   127.0.0.1 192.168.1.100 192.168.1.1
 * [MY LAPTOP] Verify the eBPF map: `sudo bpftool map dump name blocked_ips`
 
 **5. Ping Flood Under Block**
-* [FRIEND LAPTOP] `sudo ping -f <TARGET_IP>` (Run for 5 seconds, then stop).
+* [FRIEND LAPTOP (Linux)] `sudo ping -f <TARGET_IP>` (Run for 5 seconds, then stop).
+* [FRIEND LAPTOP (Windows)] Open PowerShell and run: `while ($true) { ping -n 1 -w 1 <TARGET_IP> | Out-Null }` (Press Ctrl+C to stop).
 * [MY LAPTOP] You will see `[DROPPING]` tags in the event log showing the exact drop rate (e.g. `rate=4000/s`).
 * *Proves:* The kernel Ring Buffer efficiently reports high-volume line-rate drops to user space.
 
 **6. Recovery**
 * [MY LAPTOP] Wait for 60 seconds. The engine will print `[EXPIRED]` and remove the IP.
-* [FRIEND LAPTOP] `ping -c 3 <TARGET_IP>` (It succeeds again).
+* [FRIEND LAPTOP] `ping <TARGET_IP>` (It succeeds again).
 
 **7. Manual Commands and Allowlist**
 * [MY LAPTOP] Type `block <FRIEND_IP>` in the engine console.
