@@ -135,7 +135,7 @@ Allowed:   127.0.0.1 192.168.1.100 192.168.1.1
 * [FRIEND LAPTOP (Linux)] `sudo ping -f <TARGET_IP>` (Run for 5 seconds, then stop).
 * [FRIEND LAPTOP (Windows)] Open PowerShell and run: `while ($true) { ping -n 1 -w 1 <TARGET_IP> | Out-Null }` (Press Ctrl+C to stop).
 * [MY LAPTOP] You will see `[DROPPING]` tags in the event log showing the exact drop rate (e.g. `rate=4000/s`).
-* *Proves:* The kernel Ring Buffer efficiently reports high-volume line-rate drops to user space.
+* *Proves:* The engine's live telemetry thread reliably polls kernel memory to report high-volume line-rate drops directly to user space.
 
 **6. Recovery**
 * [MY LAPTOP] Wait for 60 seconds. The engine will print `[EXPIRED]` and remove the IP.

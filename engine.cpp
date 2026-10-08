@@ -300,33 +300,25 @@ private:
     int allow_fd_, block_fd_, stats_fd_;
 };
 
-struct DropState {
-    std::chrono::steady_clock::time_point last_print;
-    uint64_t last_count = 0;
-};
-static std::map<std::string, DropState> g_drop_states;
-static std::mutex g_drop_mu;
-
-static int handle_event(void* /*ctx*/, void *data, size_t size) {
-    if (size < sizeof(struct drop_event)) return 0;
-    auto* ev = static_cast<struct drop_event*>(data);
-    std::string ip = ip_to_string(ev->src_ip);
-    
-    std::lock_guard<std::mutex> lock(g_drop_mu);
-    auto now = std::chrono::steady_clock::now();
-    auto& state = g_drop_states[ip];
-    uint64_t current_drops = ev->total_hits;
-    if (current_drops > state.last_count) {
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - state.last_print).count();
-        if (elapsed >= 2) {
-            uint64_t diff = current_drops - state.last_count;
-            uint64_t rate = elapsed > 0 ? diff / elapsed : diff;
-            print_log("[DROPPING]", ip + " total=" + std::to_string(current_drops) + " rate=" + std::to_string(rate) + "/s");
-            state.last_print = now;
-            state.last_count = current_drops;
+void drop_poller(std::stop_token st, int block_fd) {
+    std::map<std::uint32_t, uint64_t> last_hits;
+    while (!st.stop_requested()) {
+        std::this_thread::sleep_for(2s);
+        std::uint32_t key = 0, next_key;
+        while (bpf_map_get_next_key(block_fd, &key, &next_key) == 0) {
+            struct block_record rec;
+            if (bpf_map_lookup_elem(block_fd, &next_key, &rec) == 0) {
+                uint64_t current = rec.hits;
+                uint64_t last = last_hits[next_key];
+                if (current > last) {
+                    uint64_t diff = current - last;
+                    print_log("[DROPPING]", ip_to_string(next_key) + " total=" + std::to_string(current) + " rate=" + std::to_string(diff / 2) + "/s");
+                    last_hits[next_key] = current;
+                }
+            }
+            key = next_key;
         }
     }
-    return 0;
 }
 
 bool check_process(const std::string& name) {
@@ -522,12 +514,7 @@ int main(int argc, char** argv) {
             try { detector.run(st); } catch (const std::exception& e) { log_warn(std::string{"tailer: "} + e.what()); }
         }};
 
-        struct ring_buffer* rb = ring_buffer__new(engine.events_fd(), handle_event, nullptr, nullptr);
-        if (!rb) throw std::runtime_error("failed to create ring buffer");
-        std::jthread rb_poller{[&rb](std::stop_token st) {
-            try { while (!st.stop_requested()) ring_buffer__poll(rb, 100); }
-            catch (const std::exception& e) { log_warn(std::string{"ringbuf: "} + e.what()); }
-        }};
+        std::jthread drop_thread{drop_poller, engine.blocked_fd()};
 
         std::string line;
         while (g_running && std::getline(std::cin, line)) {
