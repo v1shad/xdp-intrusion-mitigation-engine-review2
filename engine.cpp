@@ -196,7 +196,7 @@ public:
     }
     int allowed_fd() const { return bpf_map__fd(bpf_object__find_map_by_name(obj_, "allowed_ips")); }
     int blocked_fd() const { return bpf_map__fd(bpf_object__find_map_by_name(obj_, "blocked_ips")); }
-    int stats_fd() const { return bpf_map__fd(bpf_object__find_map_by_name(obj_, "ip_stats")); }
+    int stats_fd() const { return bpf_map__fd(bpf_object__find_map_by_name(obj_, "stats")); }
     int events_fd() const { return bpf_map__fd(bpf_object__find_map_by_name(obj_, "events")); }
 private:
     struct bpf_object* obj_{nullptr};
@@ -251,7 +251,6 @@ public:
             struct block_record rec;
             if (bpf_map_lookup_elem(block_fd_, &next_key, &rec) == 0 && rec.expires_at_ns > 0 && now_ns >= rec.expires_at_ns) {
                 bpf_map_delete_elem(block_fd_, &next_key);
-                bpf_map_delete_elem(stats_fd_, &next_key);
                 print_log("[EXPIRED]", ip_to_string(next_key) + " (ttl elapsed)");
             }
             key = next_key;
@@ -279,16 +278,22 @@ public:
         if (count == 0) log_info("blocklist is empty");
     }
     void print_stats() const {
-        std::uint32_t key = 0, passed = 0;
-        bpf_map_lookup_elem(stats_fd_, &key, &passed);
-        std::uint32_t dropped = 0, next_key = 0;
-        key = 0;
-        while (bpf_map_get_next_key(stats_fd_, &key, &next_key) == 0) {
-            if (next_key == 0) { key = next_key; continue; }
-            std::uint32_t val = 0;
-            if (bpf_map_lookup_elem(stats_fd_, &next_key, &val) == 0) dropped += val;
-            key = next_key;
+        int num_cpus = libbpf_num_possible_cpus();
+        if (num_cpus <= 0) return;
+        std::vector<std::uint64_t> vals(num_cpus);
+        
+        std::uint32_t key = 1; // 1 = passed
+        std::uint64_t passed = 0;
+        if (bpf_map_lookup_elem(stats_fd_, &key, vals.data()) == 0) {
+            for (auto v : vals) passed += v;
         }
+
+        key = 0; // 0 = dropped
+        std::uint64_t dropped = 0;
+        if (bpf_map_lookup_elem(stats_fd_, &key, vals.data()) == 0) {
+            for (auto v : vals) dropped += v;
+        }
+        
         log_info("Packets passed: " + std::to_string(passed) + ", dropped: " + std::to_string(dropped));
     }
 private:
